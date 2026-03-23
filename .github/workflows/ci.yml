@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout this adapter repo
+      - uses: actions/checkout@v4
+        with:
+          path: adapter-google-discover
+
+      # Checkout browserkit core alongside it so the file: dep resolves
+      - uses: actions/checkout@v4
+        with:
+          repository: browserkit-dev/browserkit
+          path: browserkit
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Build core first so its dist/ is available
+      - name: Install & build @browserkit/core
+        working-directory: browserkit
+        run: |
+          npm install -g pnpm
+          pnpm install --frozen-lockfile
+          pnpm --filter @browserkit/core build
+
+      # Point adapter's @browserkit/core dep at the checked-out core
+      - name: Patch @browserkit/core dep path
+        working-directory: adapter-google-discover
+        run: |
+          npm pkg set 'devDependencies.@browserkit/core'='file:../browserkit/packages/core'
+          npm pkg set 'peerDependencies.@browserkit/core'='>=0.1.0'
+
+      - name: Install adapter dependencies
+        working-directory: adapter-google-discover
+        run: npm install
+
+      - name: Install Playwright Chromium
+        working-directory: adapter-google-discover
+        run: npx playwright install chromium --with-deps
+
+      - name: Build
+        working-directory: adapter-google-discover
+        run: npm run build
+
+      # Runs: L1 unit (9 tests, no browser) + mock scraping (23 tests, local HTML fixture)
+      # Skipped: L2 integration (requires Google login), L3/L4 (require Google login for isLoggedIn nav)
+      # Note: L3/L4 tests are excluded via vitest.config.ts's exclude pattern for *.integration.test.ts
+      # but mcp-protocol.test.ts and reliability.test.ts DO run — they handle the "not logged in" path
+      # gracefully (human handoff returns a structured error, not a crash), so they pass in CI too.
+      - name: Test
+        working-directory: adapter-google-discover
+        run: npm test
+        timeout-minutes: 5
