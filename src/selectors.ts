@@ -7,11 +7,19 @@
  * semantic elements (h3, a[href], img) that are far more stable — Google uses
  * them for internal analytics and rarely renames them.
  *
- * If the Discover feed stops working, run `browserkit health_check google-discover`
+ * If the Discover feed stops working, run `browser { action: "health_check" }`
  * first. It will report which selectors are no longer found on the live page,
  * making it easy to identify what changed.
  *
- * Confirmed from Google mobile web DevTools inspection (Pixel 5 UA, 2025).
+ * INFINITE SCROLL LIMITATION: Google Discover does not trigger lazy-loading
+ * of additional articles in automated browser contexts (headless or headed
+ * Playwright/Chrome). The initial page render loads ~10 articles, and no
+ * further articles appear regardless of scroll events. This was confirmed
+ * with: Pixel 5 (Android 11), Pixel 7 (Android 14), both headless and
+ * watch mode, both window.scrollBy and mouse.wheel CDP events.
+ * Re-investigate if this changes in future Playwright or Chrome versions.
+ *
+ * Confirmed from Google mobile web DevTools inspection (Pixel 7 UA, 2026).
  */
 export const SELECTORS = {
   /**
@@ -61,9 +69,9 @@ export const SELECTORS = {
   /**
    * Google account avatar in the top-right of the mobile Google homepage.
    * Present when logged in. Used by isLoggedIn() to detect auth state.
-   * Selector anchors on the img inside the account menu button.
+   * The avatar is the circular profile photo button in the top-right corner.
    */
-  accountAvatar: "img[data-atf][src*='googleusercontent.com'], [aria-label='Google Account'], a[href*='accounts.google.com'] img",
+  accountAvatar: 'img[src*="googleusercontent.com"], .gb_d img, [aria-label*="Google Account"], [data-ogsr-up] img',
 
   /**
    * The Discover feed scroll container. Present on mobile google.com when

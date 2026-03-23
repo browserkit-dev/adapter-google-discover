@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<!--
+  Mock Google Discover feed page for scraping tests.
+
+  Structure mirrors what we observed on the live google.com mobile page:
+  - Cards are wrapped in [data-hveid] elements
+  - Titles are in unstyled divs (NOT h3/h4) — the longest leaf text in the card
+  - Source publisher and age are in short span elements near the title
+  - Images are in img[src] elements
+  - Some cards have a[href] links; some use jsaction (no link attribute)
+  - Some cards are noise (short text, no article content) and should be filtered
+
+  Selector under test: [data-hveid]
+-->
+<html lang="en">
+<head><meta charset="UTF-8"><title>Google</title></head>
+<body>
+
+<!-- Navigation bar (should be filtered — no data-hveid) -->
+<div id="nav">
+  <a href="/">ALL</a>
+  <a href="/images">IMAGES</a>
+</div>
+
+<!-- Search bar (no data-hveid, should be filtered) -->
+<div class="search-box"><input type="text" /></div>
+
+<!-- ── Card 1: article with link, source, age, image ────────────────────── -->
+<div data-hveid="1">
+  <a href="https://techcrunch.com/2026/03/23/cloudflare-gen13/">
+    <div>
+      <img src="https://img.example.com/cloudflare.jpg" alt="Cloudflare">
+    </div>
+    <div>
+      <div><span>Cloudflare Blog</span></div>
+      <div><span>Launching Cloudflare's Gen 13 servers: trading cache for cores for 2x edge compute performance</span></div>
+      <div><span>4h ago</span></div>
+    </div>
+  </a>
+</div>
+
+<!-- ── Card 2: article with jsaction (no a[href]), different source format ─ -->
+<div data-hveid="2" jsaction="click:someHandler">
+  <div>
+    <img src="https://img.example.com/openai.jpg" alt="OpenAI">
+    <div><span>OpenAI</span><span>·</span><span>2h</span></div>
+    <div>
+      <span>OpenAI announces GPT-5: a model that reasons across text, code, images, and video in real time</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Card 3: YouTube video card ─────────────────────────────────────────── -->
+<div data-hveid="3">
+  <div>
+    <img src="https://img.youtube.com/thumb.jpg">
+    <div>
+      <span>Cursor's Composer 2 beats Opus 4.6 on coding benchmarks at a fraction of the price</span>
+    </div>
+    <div>
+      <span>Theo</span>
+      <span>YouTube</span>
+      <span>1w</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Card 4: article in Hebrew (unicode title) ──────────────────────────── -->
+<div data-hveid="4">
+  <div>
+    <div><span>Ynet</span><span>3h ago</span></div>
+    <div><span>מיום שני ב-17:00: פחות טיסות בנתב"ג, ורק 50 נוסעים בכל טיסה יוצאת מהארץ</span></div>
+  </div>
+</div>
+
+<!-- ── Card 5: article with data-url attribute (not a[href]) ──────────────── -->
+<div data-hveid="5" data-url="https://arstechnica.com/tech-policy/2026/03/rabbit-cyberdeck/">
+  <div>
+    <img src="https://cdn.arstechnica.com/rabbit.jpg">
+    <div>
+      <div><span>Ars Technica</span></div>
+      <div><span>Rabbit revives the netbook spirit with Project Cyberdeck: an open-source portable computer for tinkerers and makers</span></div>
+      <div><span>yesterday</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Noise elements that should be filtered ────────────────────────────── -->
+
+<!-- Short text element with data-hveid — should be filtered (text < 30 chars) -->
+<div data-hveid="noise-1"><span>Ad</span></div>
+
+<!-- data-hveid tracking pixel -->
+<div data-hveid="noise-2"></div>
+
+<!-- A div with data-hveid but only navigation text -->
+<div data-hveid="noise-3"><span>See more</span></div>
+
+</body>
+</html>

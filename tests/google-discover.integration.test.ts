@@ -39,7 +39,7 @@ interface Article {
 
 describe("authentication (live)", () => {
   it("health_check reports loggedIn=true when Google session is active", async () => {
-    const result = await client.callTool("health_check");
+    const result = await client.callTool("browser", { action: "health_check" });
     const status = JSON.parse(result.content[0]?.text ?? "{}") as {
       loggedIn: boolean;
       site: string;
@@ -88,10 +88,10 @@ describe("get_feed (live, authenticated)", () => {
 
   it("selector health report confirms feed cards are found on the live page", async () => {
     // Navigate to google.com first so health_check can validate selectors on the feed page
-    await client.callTool("navigate", { url: "https://www.google.com/?hl=en&gl=US" });
+    await client.callTool("browser", { action: "navigate", { url: "https://www.google.com/?hl=en&gl=US" });
     await new Promise((r) => setTimeout(r, 2000)); // let the feed load
 
-    const result = await client.callTool("health_check");
+    const result = await client.callTool("browser", { action: "health_check" });
     const status = JSON.parse(result.content[0]?.text ?? "{}") as {
       selectors?: Record<string, { found: boolean; count: number }>;
     };

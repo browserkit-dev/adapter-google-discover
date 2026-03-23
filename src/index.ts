@@ -2,6 +2,7 @@ import { defineAdapter } from "@browserkit/core";
 import { z } from "zod";
 import type { Page } from "playwright";
 import { SELECTORS } from "./selectors.js";
+import { scrapeDiscoverCards } from "./scraper.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -10,7 +11,6 @@ interface Article {
   source: string;
   age: string;
   url: string;
-  topic?: string;
   imageUrl?: string;
 }
 
@@ -21,13 +21,12 @@ const feedSchema = z.object({
     .number()
     .int()
     .min(1)
-    .max(30)
+    .max(15)
     .default(10)
-    .describe("Number of Discover articles to return (1–30)"),
+    .describe("Number of Discover articles to return (1–15). Google Discover loads ~10 articles on initial page render and does not trigger infinite scroll in automated browser contexts."),
 });
 
 type FeedInput = z.infer<typeof feedSchema>;
-
 // ─── Adapter ──────────────────────────────────────────────────────────────────
 
 export default defineAdapter({
@@ -39,28 +38,35 @@ export default defineAdapter({
 
   /**
    * Returns true when the user is logged into Google.
-   * Navigates to google.com and checks for a Google Account avatar in the
-   * top-right corner — the canonical indicator of a logged-in Google session
-   * on the mobile web interface.
+   *
+   * IMPORTANT: does NOT navigate — just checks the current page for a Google
+   * Account avatar. This makes it safe to call repeatedly during the login flow
+   * (the login command polls isLoggedIn() while the user is signing in — if we
+   * navigated to google.com on each call, it would keep pulling the user away
+   * from the sign-in page).
+   *
+   * The avatar appears on any *.google.com page once logged in.
    */
   async isLoggedIn(page: Page): Promise<boolean> {
     try {
-      await page.goto("https://www.google.com/?hl=en&gl=US", {
-        waitUntil: "domcontentloaded",
-        timeout: 15_000,
-      });
-      // Accept any consent/cookie banner that may appear
-      const consentBtn = page.locator(
-        'button:has-text("Accept all"), button:has-text("I agree"), button:has-text("Accept"), [aria-label*="Accept"]'
-      ).first();
-      if (await consentBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await consentBtn.click().catch(() => {});
-        await page.waitForTimeout(1000);
+      // If not on google.com, navigate there first so we can check for the avatar.
+      // We avoid navigation during normal tool calls (where the page is already on google.com),
+      // but navigate on startup checks and after cold-starts where the page is about:blank.
+      const url = page.url();
+      if (!url.includes("google.com")) {
+        await page.goto("https://www.google.com/?hl=en&gl=US", {
+          waitUntil: "domcontentloaded",
+          timeout: 15_000,
+        });
+        // Accept any consent banner
+        const consent = page.locator('button:has-text("Accept all"), button:has-text("I agree"), button:has-text("Accept")').first();
+        if (await consent.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await consent.click().catch(() => {});
+          await page.waitForTimeout(800);
+        }
       }
-      // Check for Google Account avatar (logged in) vs Sign in button (not logged in)
       const avatar = page.locator(SELECTORS.accountAvatar).first();
-      const isLoggedIn = await avatar.isVisible({ timeout: 3000 });
-      return isLoggedIn;
+      return await avatar.isVisible({ timeout: 3000 });
     } catch {
       return false;
     }
@@ -73,17 +79,22 @@ export default defineAdapter({
       description:
         "Get personalised articles from your Google Discover feed. " +
         "Requires a logged-in Google account (run `browserkit login google-discover` once). " +
-        "The adapter runs in Pixel 5 mobile emulation so Google serves the full Discover feed. " +
-        "Results are sorted by Google's personalisation algorithm based on your interests and activity.",
+        "Returns the ~10 articles Google loads on initial page render. " +
+        "NOTE: Google Discover does not trigger infinite scroll in automated browser contexts — " +
+        "the practical limit is ~10 articles per call regardless of `count`.",
       inputSchema: feedSchema,
       async handler(page: Page, input: unknown) {
         const { count } = feedSchema.parse(input) satisfies FeedInput;
 
         // Navigate to google.com in mobile mode — Discover appears below the search bar
-        await page.goto("https://www.google.com/?hl=en&gl=US", {
-          waitUntil: "domcontentloaded",
-          timeout: 15_000,
-        });
+        // Skip navigation if already on google.com (saves round-trip and keeps loaded feed)
+        const currentUrl = page.url();
+        if (!currentUrl.includes("google.com") || currentUrl.includes("accounts.google.com")) {
+          await page.goto("https://www.google.com/?hl=en&gl=US", {
+            waitUntil: "domcontentloaded",
+            timeout: 20_000,
+          });
+        }
 
         // Accept consent dialog if present
         const consentBtn = page.locator(
@@ -93,9 +104,31 @@ export default defineAdapter({
           await consentBtn.click().catch(() => {});
         }
 
-        // Wait for Discover cards — they load after the page settles
+        // Wait for Discover cards to load.
+        //
+        // KNOWN LIMITATION — Google Discover does not support infinite scroll
+        // in automated browser contexts (Playwright, headless Chrome, or even
+        // watch-mode headed Chrome). The IntersectionObserver-based lazy-loading
+        // that powers infinite scroll on a real mobile device does not fire when
+        // scroll events are simulated via JavaScript or CDP input events.
+        //
+        // The practical result: Google renders ~10 articles on initial page load
+        // and no further articles appear regardless of how much we scroll.
+        // `count` is capped at 15 to reflect this reality.
+        //
+        // If this ever changes (e.g. Google updates their Discover serving or
+        // Playwright adds native touch scroll support), re-investigate by running
+        // watch mode and manually verifying that scrolling loads new cards before
+        // re-enabling progressive scroll in this handler.
         try {
-          await page.waitForSelector(SELECTORS.cardContainer, { timeout: 10_000 });
+          await page.evaluate(() => window.scrollBy(0, 400));
+          await page.waitForFunction(
+            (sel) => Array.from(document.querySelectorAll(sel))
+              .filter((el) => (el.textContent?.trim().length ?? 0) > 30).length >= 1,
+            SELECTORS.cardContainer,
+            { timeout: 20_000 }
+          );
+          await page.waitForTimeout(1000);
         } catch {
           return {
             content: [{
@@ -114,61 +147,9 @@ export default defineAdapter({
         await page.waitForTimeout(1500);
 
         // Scrape all visible Discover cards in one page.evaluate pass
-        const articles: Article[] = await page.evaluate(
-          ({ containerSel, n }) => {
-            const containers = Array.from(
-              document.querySelectorAll(containerSel)
-            ).filter((el) => {
-              // Only cards that have a heading (title) and a link — excludes
-              // tracking pixels and non-article elements that also have data-hveid
-              const hasTitle = el.querySelector("h3, h4, [role='heading']");
-              const hasLink = el.querySelector("a[href]");
-              return hasTitle && hasLink;
-            }).slice(0, n);
+        const articles: Article[] = await scrapeDiscoverCards(page, SELECTORS.cardContainer, count);
 
-            return containers.map((card) => {
-              const titleEl = card.querySelector("h3, h4, [role='heading']") as HTMLElement | null;
-              const linkEl = card.querySelector("a[href]") as HTMLAnchorElement | null;
-              const imgEl = card.querySelector("img[src]") as HTMLImageElement | null;
-
-              // Source and age: look for small text nodes near the title.
-              // Google renders them as spans in the card metadata area.
-              // We grab ALL short text spans and classify them heuristically.
-              const spans = Array.from(card.querySelectorAll("span, div"))
-                .map((el) => (el.textContent ?? "").replace(/\s+/g, " ").trim())
-                .filter((t) => t.length > 0 && t.length < 100 && t !== (titleEl?.textContent ?? "").trim());
-
-              // Age heuristic: contains time units
-              const ageSpan = spans.find((t) =>
-                /\b(ago|hour|min|day|week|yesterday|today|just now)\b/i.test(t)
-              ) ?? "";
-
-              // Source heuristic: short string that isn't the age or title,
-              // typically a publication name
-              const sourceSpan = spans.find((t) =>
-                t !== ageSpan && t.length > 2 && t.length < 60 && !/^\d/.test(t)
-              ) ?? "";
-
-              // Topic label: sometimes rendered as a tag/pill on the card
-              const topicEl = card.querySelector("[aria-label*='topic'], [aria-label*='interest'], .topic, .label") as HTMLElement | null;
-              const topic = topicEl?.textContent?.trim() ?? undefined;
-
-              return {
-                title: titleEl?.textContent?.trim() ?? "",
-                source: sourceSpan,
-                age: ageSpan,
-                url: linkEl?.href ?? "",
-                ...(topic ? { topic } : {}),
-                ...(imgEl?.src ? { imageUrl: imgEl.src } : {}),
-              };
-            });
-          },
-          { containerSel: SELECTORS.cardContainer, n: count }
-        );
-
-        const validArticles = articles.filter((a) => a.title.length > 0 && a.url.length > 0);
-
-        if (validArticles.length === 0) {
+        const validArticles = articles.filter((a) => a.title.length > 0);        if (validArticles.length === 0) {
           return {
             content: [{
               type: "text" as const,

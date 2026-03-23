@@ -68,7 +68,7 @@ describe("latency", () => {
   it("health_check responds under 10s", async () => {
     const client = await createTestMcpClient(server.url);
     const t0 = Date.now();
-    const result = await client.callTool("health_check");
+    const result = await client.callTool("browser", { action: "health_check" });
     const elapsed = Date.now() - t0;
 
     expect(result.isError).toBeFalsy();
@@ -86,7 +86,7 @@ describe("error recovery", () => {
     const bad = await client.callTool("get_feed", { count: 0 });
     expect(bad.isError).toBe(true);
 
-    const good = await client.callTool("health_check");
+    const good = await client.callTool("browser", { action: "health_check" });
     const status = JSON.parse(good.content[0]?.text ?? "{}") as { site: string };
     expect(status.site).toBe("google-discover");
 
@@ -97,7 +97,7 @@ describe("error recovery", () => {
     const client = await createTestMcpClient(server.url);
 
     for (let i = 0; i < 5; i++) {
-      const result = await client.callTool("health_check");
+      const result = await client.callTool("browser", { action: "health_check" });
       expect(result.content[0]?.type).toBe("text");
     }
 

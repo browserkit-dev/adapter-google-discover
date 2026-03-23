@@ -38,11 +38,11 @@ describe("tool registry", () => {
   it("lists all 5 auto-registered management tools", async () => {
     const tools = await client.listTools();
     const names = tools.map((t) => t.name);
-    expect(names).toContain("health_check");
-    expect(names).toContain("set_mode");
-    expect(names).toContain("take_screenshot");
-    expect(names).toContain("get_page_state");
-    expect(names).toContain("navigate");
+    expect(names).toContain("browser");
+    
+    
+    
+    
   });
 
   it("all tools have a description", async () => {
@@ -57,7 +57,7 @@ describe("tool registry", () => {
 
 describe("get_page_state", () => {
   it("returns mode=headless", async () => {
-    const result = await client.callTool("get_page_state");
+    const result = await client.callTool("browser", { action: "page_state" });
     const state = JSON.parse(result.content[0]?.text ?? "{}") as { mode: string };
     expect(state.mode).toBe("headless");
   });
@@ -107,7 +107,7 @@ describe("bearer token auth", () => {
     if (unauthClient instanceof Error) {
       expect(unauthClient.message).toBeTruthy();
     } else {
-      const result = await unauthClient.callTool("health_check").catch((e: Error) => e);
+      const result = await unauthClient.callTool("browser", { action: "health_check" }).catch((e: Error) => e);
       expect(result instanceof Error).toBe(true);
       await unauthClient.close();
     }
