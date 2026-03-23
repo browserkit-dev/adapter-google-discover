@@ -29,7 +29,7 @@ describe("Google Discover adapter", () => {
     const tool = adapter.tools().find((t) => t.name === "get_feed")!;
     expect(tool.inputSchema.safeParse({ count: 10 }).success).toBe(true);
     expect(tool.inputSchema.safeParse({ count: 1 }).success).toBe(true);
-    expect(tool.inputSchema.safeParse({ count: 30 }).success).toBe(true);
+    expect(tool.inputSchema.safeParse({ count: 15 }).success).toBe(true);
   });
 
   it("get_feed schema rejects count=0", () => {
@@ -37,9 +37,9 @@ describe("Google Discover adapter", () => {
     expect(tool.inputSchema.safeParse({ count: 0 }).success).toBe(false);
   });
 
-  it("get_feed schema rejects count=31 (above max)", () => {
+  it("get_feed schema rejects count=16 (above max of 15)", () => {
     const tool = adapter.tools().find((t) => t.name === "get_feed")!;
-    expect(tool.inputSchema.safeParse({ count: 31 }).success).toBe(false);
+    expect(tool.inputSchema.safeParse({ count: 16 }).success).toBe(false);
   });
 
   it("get_feed schema uses default count of 10", () => {

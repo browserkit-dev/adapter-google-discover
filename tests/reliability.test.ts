@@ -50,7 +50,7 @@ describe("concurrency", () => {
     );
 
     const results = await Promise.all(
-      clients.map((c) => c.callTool("health_check"))
+      clients.map((c) => c.callTool("browser", { action: "health_check" }))
     );
 
     for (const result of results) {
