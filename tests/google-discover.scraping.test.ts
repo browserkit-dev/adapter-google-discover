@@ -19,7 +19,7 @@
  *   - Unicode / non-ASCII titles
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { chromium, devices, type Browser, type BrowserContext, type Page } from "playwright";
+import { chromium, devices, type Browser, type BrowserContext, type Page } from "patchright";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { scrapeDiscoverCards } from "../src/scraper.js";
